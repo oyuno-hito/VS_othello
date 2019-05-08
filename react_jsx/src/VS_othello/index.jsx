@@ -5,7 +5,8 @@ import request from 'superagent'
 const empty = -1;
 const black = 0;
 const white = 1;
-const cpuUrl = 'cpu2';
+
+
 
 function getStoneTag(stone) {
     if (stone == black) {
@@ -137,18 +138,52 @@ class Board extends React.Component {
 class Game extends React.Component {
     constructor() {
         super();
+        //myColorの取得
+        const colorURL="getColor"
+        let myColor=empty;
+        addHeader(request.get(colorURL))
+        .end(function (err, res) {
+            if (err) {
+                alert(res.text);
+            }
+            console.dir(res);
+                if (res.body["player"]){
+                    myColor=white;
+                }
+                else{
+                    myColor=black;
+                }
+        }.bind(this));
+        const reloadURL="putStone"
+        //初期盤面の取得
+        let squares;
+        addHeader(request.get(reloadURL))
+            .end(function (err, res) {
+                if (err) {
+                    alert(res.text);
+                }
+                console.dir(res);
+                squares=res.body["bannmenn"];
+                
+                
+            }.bind(this));
+        
+
+        /*
         // Create squares
         let squares = Array(64).fill(empty);
         squares[this.calcPos(4, 4)] = black;
         squares[this.calcPos(5, 4)] = white;
         squares[this.calcPos(4, 5)] = white;
         squares[this.calcPos(5, 5)] = black;
+        */
 
         this.state = {
             squares: squares,
             stepNumber: 0,
             player: black,
             isEnd: false,
+            myColor:myColor,
         };
     }
 
@@ -182,18 +217,21 @@ class Game extends React.Component {
                 player: nextPlayer,
                 isEnd: isEnd,
             });
-            if (nextPlayer == white && !isEnd) {
-                setTimeout(me.cpu, 100, nextPlayer, squares, me);
+            
+            if (nextPlayer == this.state.myColor && !isEnd) {
+                me.opponent();
             }
+            
             clearTimeout(timer);
         }
     }
 
     handleClick(i) {
-        if (this.state.player == white) {
+        if (this.state.player !== this.state.myColor) {
             alert("It is not your turn!");
         }
 
+        else{
         const url = 'put_stone';
 
         addHeader(request.post(url))
@@ -215,44 +253,72 @@ class Game extends React.Component {
                     alert('You cannot put there!!')
                 }
             }.bind(this));
+        }
     }
-
-    cpu(player, squares, me) {
-        addHeader(request.post(cpuUrl))
-        .send({
-            player: player,
-            squares: squares,
-        })
-        .end(function (err, res) {
-            if (err) {
-                alert(res.text);
-            }
-            console.dir(res);
-            
-            if (res.body['success']) {
-                me.tick(player, squares, res.body['history'], 0, res.body['isEnd'], me);
-            }
-            else {
-                me.cpuPass();
-            }
-        }.bind(this));
-    }
-
-    pass() {
-        if (this.state.player == black) {
-            this.setState({
-                player : white,
-            });
-            this.cpu(white, this.state.squares, this);
+    componentDidMount(){
+        if(this.state.player!==this.state.myColor){
+            this.opponent();
         }
     }
 
-    cpuPass() {
-        alert('CPU passed its turn.');
-        this.setState({
-            player : black,
-        });
+
+    opponent(){
+        //一定間隔ごとにDBから新しい盤面を取得
+        get_board=()=>{
+            //DBから盤面の取得
+            addHeader(request.get(url))
+            .end(function (err, res) {
+                if (err) {
+                    alert(res.text);
+                }
+                console.dir(res);
+                if(this.state.player!==res.body["手番"]){
+                    clearInterval(this.ID);
+                    this.setState({squares:res.body["board"],player:res.body["手番"]});
+                }
+                //取得した盤面を更新
+                //me.tick(player, squares, res.body['history'], 0, res.body['isEnd'], me);
+                
+            }.bind(this));
+            //盤面が更新されたら（プレイヤーが自分になったら）clearInterval
+        }
+        this.ID=setInterval(()=>get_board,1000);
     }
+
+
+
+    pass() {
+        if (this.state.player === this.state.myColor) {
+            const url = 'put_stone';
+            addHeader(request.post(url))
+            .send({
+                player: this.state.player,
+                squares: this.state.squares,
+                put_pos: empty,
+            })
+            .end(function (err, res) {
+                if (err) {
+                    alert(res.text);
+                }
+                console.dir(res);
+                /*
+                if (res.body['success']) {
+                    this.tick(this.state.player, this.state.squares, res.body['history'], 0, res.body['isEnd'], this);
+                }
+                else {
+                    alert('You cannot put there!!')
+                }
+                */
+            }.bind(this));
+            
+            const player=this.state.player;
+            this.setState(()=>({
+                player : 1-player,
+            }),this.opponent());
+            
+        }
+    }
+
     
     render() {
         let blackCount = this.countStone(black);
@@ -296,7 +362,7 @@ class Game extends React.Component {
                             <h1> {getStoneTag(black)} (YOU) : {blackCount} </h1>
                         </div>
                         <div>
-                            <h1> {getStoneTag(white)} (CPU) : {whiteCount} </h1>
+                            <h1> {getStoneTag(white)} (OPO) : {whiteCount} </h1>
                         </div>
                         <div>
                             <button onClick={() => this.pass()}>PASS</button>
